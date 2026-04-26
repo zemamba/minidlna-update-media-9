@@ -72,7 +72,7 @@ All paths can be set either with flags or environment variables.
 ## Usage
 
 ```bash
-python3 minidlna-update-media-9.py --media-dir /path/to/media
+python3 minidlna-update-media-library.py --media-dir /path/to/media
 ```
 
 If `--media-dir` is omitted and `MINIDLNA_MEDIA_DIR` is not set, the script will try to detect a likely media folder and ask for confirmation in interactive mode.
@@ -80,7 +80,7 @@ If `--media-dir` is omitted and `MINIDLNA_MEDIA_DIR` is not set, the script will
 ### Dry Run
 
 ```bash
-python3 minidlna-update-media-9.py --media-dir /path/to/media --dry-run
+python3 minidlna-update-media-library.py --media-dir /path/to/media --dry-run
 ```
 
 ### Example With Environment Variables
@@ -88,7 +88,7 @@ python3 minidlna-update-media-9.py --media-dir /path/to/media --dry-run
 ```bash
 export MINIDLNA_MEDIA_DIR=/srv/media
 export MINIDLNA_CONF_FILE=~/.config/minidlna/minidlna.conf
-python3 minidlna-update-media-9.py
+python3 minidlna-update-media-library.py
 ```
 
 ## What The Script Does
