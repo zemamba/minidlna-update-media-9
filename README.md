@@ -1,4 +1,4 @@
-# minidlna-update-media-9
+# minidlna-update-media-library
 
 Portable MiniDLNA maintenance script for local media libraries.
 
