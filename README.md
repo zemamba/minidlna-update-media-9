@@ -17,7 +17,8 @@ Unlike the earlier local-only variant, this version is safe to publish:
 - recursive scan of a media directory
 - orphaned `.jpg` cover cleanup
 - missing cover generation for supported video files
-- MiniDLNA stop / rebuild / readiness-check workflow
+- no-op when nothing changed
+- graceful MiniDLNA reload first, restart only as fallback
 - dry-run mode
 - configurable paths through flags and env vars
 
@@ -95,11 +96,12 @@ python3 minidlna-update-media-9.py
 1. Validates paths and required binaries.
 2. Removes `.jpg` files that no longer match any supported video file.
 3. Generates a thumbnail for each video that does not already have a sibling `.jpg`.
-4. Stops all running `minidlnad` processes.
-5. Starts MiniDLNA with `-R` when rescan mode is enabled.
-6. Waits until the local MiniDLNA HTTP endpoint becomes ready.
-7. Optionally performs one fallback restart if readiness fails.
-8. Verifies that MiniDLNA is running.
+4. If nothing changed and MiniDLNA is already running, it leaves the service untouched.
+5. If changes were detected, it first tries a graceful `SIGHUP` reload.
+6. If reload is not enough, it falls back to a full restart.
+7. Waits until the local MiniDLNA HTTP endpoint becomes ready.
+8. Optionally performs one extra fallback restart if requested.
+9. Verifies that MiniDLNA is running.
 
 ## Notes
 
@@ -107,6 +109,7 @@ python3 minidlna-update-media-9.py
 - Thumbnail capture uses a random timestamp in a configurable range.
 - In `--dry-run` mode, commands are logged but not executed.
 - The default mode does not force a second restart anymore; fallback restart is optional.
+- The default mode also avoids touching MiniDLNA at all when no media changes are detected.
 
 ## License
 

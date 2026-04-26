@@ -48,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ready-timeout", type=float, default=float(os.environ.get("MINIDLNA_READY_TIMEOUT", 45)))
     parser.add_argument("--double-restart", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--rescan", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--force-restart", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -96,6 +97,7 @@ class App:
         self.ready_timeout = max(1, args.ready_timeout)
         self.double_restart = args.double_restart
         self.rescan = args.rescan
+        self.force_restart = args.force_restart
         self.dry_run = args.dry_run
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -140,6 +142,11 @@ class App:
                 self.log(f"Removed pid file: {self.pid_file}")
             except OSError as exc:
                 self.log(f"warning: failed to remove pid file: {exc}")
+
+    def reload_minidlna(self) -> bool:
+        self.log("Reloading MiniDLNA with SIGHUP...")
+        result = self.run(["pkill", "-HUP", "-x", "minidlnad"], capture_output=True)
+        return result.returncode == 0
 
     def start_minidlna(self, rescan: bool) -> None:
         cmd = [self.minidlna_bin, "-f", str(self.conf_file)]
@@ -224,13 +231,28 @@ class App:
     def main(self) -> int:
         self.validate()
         self.log("=== MiniDLNA maintenance started ===")
-        self.cleanup_orphaned_covers()
-        self.generate_new_covers()
-        self.stop_minidlna()
-        self.start_minidlna(self.rescan)
-        ready = self.wait_until_ready()
+        removed = self.cleanup_orphaned_covers()
+        created = self.generate_new_covers()
+        changed = removed > 0 or created > 0
+        running = self.check_status()
+
+        if not changed and running and not self.force_restart:
+            self.log("No media changes detected. Leaving MiniDLNA untouched.")
+            ready = self.wait_until_ready()
+        elif running and not self.force_restart:
+            ready = self.reload_minidlna() and self.wait_until_ready()
+            if not ready:
+                self.log("Reload did not become ready, switching to restart fallback...")
+                self.stop_minidlna()
+                self.start_minidlna(self.rescan)
+                ready = self.wait_until_ready()
+        else:
+            self.stop_minidlna()
+            self.start_minidlna(self.rescan)
+            ready = self.wait_until_ready()
+
         if not ready and self.double_restart:
-            self.log("MiniDLNA was not ready in time, performing fallback restart...")
+            self.log("MiniDLNA was not ready in time, performing extra fallback restart...")
             self.stop_minidlna()
             time.sleep(1)
             self.start_minidlna(False)
