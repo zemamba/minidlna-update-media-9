@@ -1,0 +1,107 @@
+# minidlna-update-media-9
+
+Portable MiniDLNA maintenance script for local media libraries.
+
+This script removes orphaned cover images, generates missing thumbnails with `ffmpeg`, and restarts `minidlnad` in a controlled way to refresh the media index.
+
+Unlike the earlier local-only variant, this version is safe to publish:
+
+- no hardcoded personal paths
+- no hardcoded usernames
+- no host-specific binaries
+- configuration comes from CLI flags and environment variables
+
+## Features
+
+- recursive scan of a media directory
+- orphaned `.jpg` cover cleanup
+- missing cover generation for supported video files
+- MiniDLNA stop / rebuild / restart workflow
+- dry-run mode
+- configurable paths through flags and env vars
+
+## Supported Video Extensions
+
+- `.mkv`
+- `.mp4`
+- `.avi`
+- `.mov`
+
+## Protected Cover Names
+
+- `folder.jpg`
+- `cover.jpg`
+- `albumart.jpg`
+
+## Requirements
+
+- Python 3.9+
+- `ffmpeg`
+- `minidlnad`
+- `pkill`
+- `pgrep`
+
+## Configuration
+
+All paths can be set either with flags or environment variables.
+
+### Environment Variables
+
+- `MINIDLNA_MEDIA_DIR`
+- `MINIDLNA_CONF_FILE`
+- `MINIDLNA_PID_FILE`
+- `MINIDLNA_LOG_DIR`
+- `FFMPEG_BIN`
+- `MINIDLNA_BIN`
+- `THUMB_MIN_SEC`
+- `THUMB_MAX_SEC`
+- `MINIDLNA_STARTUP_DELAY`
+- `MINIDLNA_STOP_DELAY`
+
+### Defaults
+
+- media dir: current working directory
+- config: `~/.config/minidlna/minidlna.conf`
+- pid file: `~/.minidlna/minidlna.pid`
+- log dir: `~/.minidlna/log`
+- binaries: resolved from `PATH`
+
+## Usage
+
+```bash
+python3 minidlna-update-media-9.py --media-dir /path/to/media
+```
+
+### Dry Run
+
+```bash
+python3 minidlna-update-media-9.py --media-dir /path/to/media --dry-run
+```
+
+### Example With Environment Variables
+
+```bash
+export MINIDLNA_MEDIA_DIR=/srv/media
+export MINIDLNA_CONF_FILE=~/.config/minidlna/minidlna.conf
+python3 minidlna-update-media-9.py
+```
+
+## What The Script Does
+
+1. Validates paths and required binaries.
+2. Removes `.jpg` files that no longer match any supported video file.
+3. Generates a thumbnail for each video that does not already have a sibling `.jpg`.
+4. Stops all running `minidlnad` processes.
+5. Starts MiniDLNA with `-R` when rescan mode is enabled.
+6. Optionally performs a second normal restart.
+7. Verifies that MiniDLNA is running.
+
+## Notes
+
+- This is a utility script for local MiniDLNA setups, not a general package manager.
+- Thumbnail capture uses a random timestamp in a configurable range.
+- In `--dry-run` mode, commands are logged but not executed.
+
+## License
+
+MIT
