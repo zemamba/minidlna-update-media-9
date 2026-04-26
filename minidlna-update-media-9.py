@@ -17,8 +17,9 @@ VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov"}
 PROTECTED_IMAGES = {"folder.jpg", "cover.jpg", "albumart.jpg"}
 
 
-def env_path(name: str, default: str) -> Path:
-    return Path(os.environ.get(name, default)).expanduser()
+def env_path(name: str) -> Path | None:
+    value = os.environ.get(name)
+    return Path(value).expanduser() if value else None
 
 
 def env_int(name: str, default: int) -> int:
@@ -31,10 +32,10 @@ def env_int(name: str, default: int) -> int:
 def parse_args() -> argparse.Namespace:
     home = Path.home()
     parser = argparse.ArgumentParser(description="MiniDLNA media maintenance helper.")
-    parser.add_argument("--media-dir", type=Path, default=env_path("MINIDLNA_MEDIA_DIR", str(Path.cwd())))
-    parser.add_argument("--conf-file", type=Path, default=env_path("MINIDLNA_CONF_FILE", str(home / ".config/minidlna/minidlna.conf")))
-    parser.add_argument("--pid-file", type=Path, default=env_path("MINIDLNA_PID_FILE", str(home / ".minidlna/minidlna.pid")))
-    parser.add_argument("--log-dir", type=Path, default=env_path("MINIDLNA_LOG_DIR", str(home / ".minidlna/log")))
+    parser.add_argument("--media-dir", type=Path, default=env_path("MINIDLNA_MEDIA_DIR"))
+    parser.add_argument("--conf-file", type=Path, default=env_path("MINIDLNA_CONF_FILE") or (home / ".config/minidlna/minidlna.conf"))
+    parser.add_argument("--pid-file", type=Path, default=env_path("MINIDLNA_PID_FILE") or (home / ".minidlna/minidlna.pid"))
+    parser.add_argument("--log-dir", type=Path, default=env_path("MINIDLNA_LOG_DIR") or (home / ".minidlna/log"))
     parser.add_argument("--ffmpeg-bin", default=os.environ.get("FFMPEG_BIN") or shutil.which("ffmpeg") or "ffmpeg")
     parser.add_argument("--minidlna-bin", default=os.environ.get("MINIDLNA_BIN") or shutil.which("minidlnad") or "minidlnad")
     parser.add_argument("--http-port", type=int, default=env_int("MINIDLNA_HTTP_PORT", 8200))
@@ -51,9 +52,34 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def detect_media_dir() -> Path:
+    home = Path.home()
+    candidates = [home / "Movies", home / "Videos", home / "Downloads", Path.cwd()]
+    for path in candidates:
+        if path.exists() and path.is_dir() and any(p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS for p in path.rglob("*")):
+            return path
+    for path in candidates:
+        if path.exists() and path.is_dir():
+            return path
+    return Path.cwd()
+
+
+def choose_media_dir(cli_value: Path | None) -> Path:
+    if cli_value:
+        return cli_value
+    detected = detect_media_dir()
+    if not sys.stdin.isatty():
+        return detected
+    answer = input(f"Use detected media directory '{detected}'? [Y/n] ").strip().lower()
+    if answer in {"", "y", "yes"}:
+        return detected
+    custom = input("Enter media directory path: ").strip()
+    return Path(custom).expanduser() if custom else detected
+
+
 class App:
     def __init__(self, args: argparse.Namespace) -> None:
-        self.media_dir = args.media_dir.expanduser().resolve()
+        self.media_dir = choose_media_dir(args.media_dir).expanduser().resolve()
         self.conf_file = args.conf_file.expanduser()
         self.pid_file = args.pid_file.expanduser()
         self.log_dir = args.log_dir.expanduser()

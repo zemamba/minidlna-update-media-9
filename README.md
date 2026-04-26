@@ -10,6 +10,7 @@ Unlike the earlier local-only variant, this version is safe to publish:
 - no hardcoded usernames
 - no host-specific binaries
 - configuration comes from CLI flags and environment variables
+- media directory can be auto-detected interactively
 
 ## Features
 
@@ -61,7 +62,7 @@ All paths can be set either with flags or environment variables.
 
 ### Defaults
 
-- media dir: current working directory
+- media dir: auto-detected from common local folders such as `~/Movies`, `~/Videos`, `~/Downloads`, then confirmed interactively when possible
 - config: `~/.config/minidlna/minidlna.conf`
 - pid file: `~/.minidlna/minidlna.pid`
 - log dir: `~/.minidlna/log`
@@ -72,6 +73,8 @@ All paths can be set either with flags or environment variables.
 ```bash
 python3 minidlna-update-media-9.py --media-dir /path/to/media
 ```
+
+If `--media-dir` is omitted and `MINIDLNA_MEDIA_DIR` is not set, the script will try to detect a likely media folder and ask for confirmation in interactive mode.
 
 ### Dry Run
 
