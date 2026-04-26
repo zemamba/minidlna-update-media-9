@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import os
 import random
 import shutil
@@ -36,13 +37,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-dir", type=Path, default=env_path("MINIDLNA_LOG_DIR", str(home / ".minidlna/log")))
     parser.add_argument("--ffmpeg-bin", default=os.environ.get("FFMPEG_BIN") or shutil.which("ffmpeg") or "ffmpeg")
     parser.add_argument("--minidlna-bin", default=os.environ.get("MINIDLNA_BIN") or shutil.which("minidlnad") or "minidlnad")
+    parser.add_argument("--http-port", type=int, default=env_int("MINIDLNA_HTTP_PORT", 8200))
     parser.add_argument("--protected-images", nargs="*", default=sorted(PROTECTED_IMAGES))
     parser.add_argument("--extensions", nargs="*", default=sorted(VIDEO_EXTENSIONS))
     parser.add_argument("--thumb-min-sec", type=int, default=env_int("THUMB_MIN_SEC", 180))
     parser.add_argument("--thumb-max-sec", type=int, default=env_int("THUMB_MAX_SEC", 600))
     parser.add_argument("--startup-delay", type=float, default=float(os.environ.get("MINIDLNA_STARTUP_DELAY", 3)))
     parser.add_argument("--stop-delay", type=float, default=float(os.environ.get("MINIDLNA_STOP_DELAY", 2)))
-    parser.add_argument("--double-restart", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--ready-timeout", type=float, default=float(os.environ.get("MINIDLNA_READY_TIMEOUT", 45)))
+    parser.add_argument("--double-restart", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--rescan", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -57,12 +60,14 @@ class App:
         self.log_file = self.log_dir / "update-media.log"
         self.ffmpeg_bin = args.ffmpeg_bin
         self.minidlna_bin = args.minidlna_bin
+        self.http_port = max(1, args.http_port)
         self.extensions = {e.lower() if e.startswith(".") else f".{e.lower()}" for e in args.extensions}
         self.protected_images = {p.lower() for p in args.protected_images}
         self.thumb_min_sec = max(0, args.thumb_min_sec)
         self.thumb_max_sec = max(self.thumb_min_sec, args.thumb_max_sec)
         self.startup_delay = max(0, args.startup_delay)
         self.stop_delay = max(0, args.stop_delay)
+        self.ready_timeout = max(1, args.ready_timeout)
         self.double_restart = args.double_restart
         self.rescan = args.rescan
         self.dry_run = args.dry_run
@@ -124,8 +129,7 @@ class App:
         for path in self.media_dir.rglob("*.jpg"):
             if path.name.lower() in self.protected_images:
                 continue
-            base = path.with_suffix("")
-            if any(base.with_suffix(ext).exists() for ext in self.extensions):
+            if any(path.with_suffix(ext).exists() for ext in self.extensions):
                 continue
             self.log(f"remove {path}")
             if self.dry_run:
@@ -168,6 +172,29 @@ class App:
             return True
         return self.run(["pgrep", "-x", "minidlnad"], capture_output=True).returncode == 0
 
+    def wait_until_ready(self) -> bool:
+        if self.dry_run:
+            self.log("Dry-run: skipping HTTP readiness check.")
+            return True
+        deadline = time.time() + self.ready_timeout
+        while time.time() < deadline:
+            if not self.check_status():
+                time.sleep(1)
+                continue
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", self.http_port, timeout=2)
+                conn.request("GET", "/rootDesc.xml")
+                resp = conn.getresponse()
+                resp.read()
+                conn.close()
+                if resp.status == 200:
+                    self.log("MiniDLNA HTTP endpoint is ready.")
+                    return True
+            except OSError:
+                pass
+            time.sleep(1)
+        return False
+
     def main(self) -> int:
         self.validate()
         self.log("=== MiniDLNA maintenance started ===")
@@ -175,11 +202,16 @@ class App:
         self.generate_new_covers()
         self.stop_minidlna()
         self.start_minidlna(self.rescan)
-        if self.double_restart:
-            self.log("Performing control restart...")
+        ready = self.wait_until_ready()
+        if not ready and self.double_restart:
+            self.log("MiniDLNA was not ready in time, performing fallback restart...")
             self.stop_minidlna()
             time.sleep(1)
             self.start_minidlna(False)
+            ready = self.wait_until_ready()
+        if not ready:
+            self.log(f"MiniDLNA failed HTTP readiness check. Check logs under: {self.log_dir}")
+            return 1
         if self.check_status():
             self.log("MiniDLNA is running.")
         else:
